@@ -1,0 +1,72 @@
+import re
+import logging
+from collections import defaultdict
+from telethon import TelegramClient, events
+
+# Настроим логирование
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# Укажите свои данные для авторизации
+API_ID = "29148612"  # Замените на ваш API ID
+API_HASH = "f7f9a66a6e11b52e76ba02f8ccbb781e"  # Замените на ваш API Hash
+TARGET_BOT_USERNAME = "@WETbilisi_Isani"  # Замените на username нужного бота
+
+# Создаём клиент Telethon
+client = TelegramClient("anon", API_ID, API_HASH)
+
+# Словарь для хранения статистики
+street_stats = defaultdict(int)
+
+EXCLUDED_PATTERNS = re.compile(r'^(N\d+-?|Ave|Avenue|Emergency|Some|Tbilisi\||Water)$', re.IGNORECASE)
+
+def extract_streets(text: str):
+    """Функция для извлечения улиц из текста."""
+    words = text.split()
+    found_streets = []
+    for word in words:
+        if word.istitle() and not re.match(r'^N\d+$', word):  # Исключаем N+число
+            found_streets.append(word)
+    return found_streets
+
+def save_stats_to_file():
+    """Сохраняет статистику в текстовый файл."""
+    with open("street_stats.txt", "w", encoding="utf-8") as f:
+        for street, count in street_stats.items():
+            f.write(f"{street}: {count}\n")
+    logging.info("Статистика сохранена в street_stats.txt")
+
+@client.on(events.NewMessage(chats=TARGET_BOT_USERNAME))
+async def message_handler(event):
+    """Обрабатывает входящие сообщения от бота."""
+    text = event.message.text
+    if text:
+        streets = extract_streets(text)
+        for street in streets:
+            street_stats[street] += 1
+    
+        if streets:
+            logging.info(f"Обнаружены улицы: {', '.join(streets)}")
+        else:
+            logging.info("Улицы не найдены.")
+
+async def print_stats():
+    """Функция для вывода статистики."""
+    logging.info("Статистика упоминаний улиц:")
+    for street, count in street_stats.items():
+        logging.info(f"{street}: {count}")
+    save_stats_to_file()
+
+async def main():
+    """Запуск клиента и сбор истории сообщений."""
+    await client.start()
+    async for message in client.iter_messages(TARGET_BOT_USERNAME,):  
+        if message.text:
+            streets = extract_streets(message.text)
+            for street in streets:
+                street_stats[street] += 1
+    
+    await print_stats()
+    await client.run_until_disconnected()
+
+if __name__ == "__main__":
+    client.loop.run_until_complete(main())
